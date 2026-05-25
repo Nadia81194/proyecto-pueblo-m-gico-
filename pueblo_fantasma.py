@@ -1,3 +1,5 @@
+import cv2
+import mediapipe as mp
 import glfw
 from OpenGL.GL import *
 from OpenGL.GLU import gluPerspective, gluLookAt, gluCylinder, gluSphere, gluNewQuadric
@@ -10,6 +12,13 @@ VEL = 0.5
 
 random.seed(42)
 
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(
+    max_num_hands=1,
+    min_detection_confidence=0.7,
+    min_tracking_confidence=0.7
+)
+cap = cv2.VideoCapture(0)
 
 def init():
     glClearColor(0.52, 0.73, 1.0, 1.0)   # cielo azul 
@@ -20,22 +29,70 @@ def init():
     gluPerspective(65, 1000/700, 0.1, 300.0)
     glMatrixMode(GL_MODELVIEW)
 
-
-def key_callback(window, key, scancode, action, mods):
+def hand_control():
     global cam_x, cam_y, cam_z, cam_yaw
-    if action not in [glfw.PRESS, glfw.REPEAT]:
+
+    ok, frame = cap.read()
+    if not ok:
         return
-    rad = math.radians(cam_yaw)
-    fx, fz = -math.sin(rad), -math.cos(rad)   # vector "adelante"
-    rx, rz =  math.cos(rad),  -math.sin(rad)  # vector "derecha"
-    if key == glfw.KEY_UP    or key == glfw.KEY_W: cam_x += fx*VEL; cam_z += fz*VEL
-    if key == glfw.KEY_DOWN  or key == glfw.KEY_S: cam_x -= fx*VEL; cam_z -= fz*VEL
-    if key == glfw.KEY_LEFT:  cam_yaw -= 3.0
-    if key == glfw.KEY_RIGHT: cam_yaw += 3.0
-    if key == glfw.KEY_A:     cam_x -= rx*VEL; cam_z -= rz*VEL
-    if key == glfw.KEY_D:     cam_x += rx*VEL; cam_z += rz*VEL
-    if key == glfw.KEY_Q:     cam_y += VEL
-    if key == glfw.KEY_Z:     cam_y -= VEL
+
+    frame = cv2.flip(frame, 1)
+
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    result = hands.process(rgb)
+
+    h, w, _ = frame.shape
+
+    if result.multi_hand_landmarks:
+
+        hand = result.multi_hand_landmarks[0]
+
+        for lm in hand.landmark:
+            x = int(lm.x*w)
+            y = int(lm.y*h)
+
+        # índice punta
+        dedo = hand.landmark[8]
+
+        px = dedo.x
+        py = dedo.y
+
+        rad = math.radians(cam_yaw)
+
+        fx = -math.sin(rad)
+        fz = -math.cos(rad)
+
+        rx = math.cos(rad)
+        rz = -math.sin(rad)
+
+        # Mano izquierda → girar izquierda
+        if px < 0.35:
+            cam_yaw -= 3
+
+        # Mano derecha → girar derecha
+        elif px > 0.65:
+            cam_yaw += 3
+
+        # Mano arriba → avanzar
+        if py < 0.35:
+            cam_x += fx*VEL
+            cam_z += fz*VEL
+
+        # Mano abajo → retroceder
+        elif py > 0.65:
+            cam_x -= fx*VEL
+            cam_z -= fz*VEL
+
+        mp.solutions.drawing_utils.draw_landmarks(
+            frame,
+            hand,
+            mp_hands.HAND_CONNECTIONS
+        )
+
+    cv2.imshow("Control con mano", frame)
+
+    if cv2.waitKey(1)==27:
+        glfw.set_window_should_close(window,True)
 
 
 def quad(x0,y0,z0, x1,y1,z1, x2,y2,z2, x3,y3,z3):
@@ -869,21 +926,37 @@ def draw_pueblo():
         draw_bench(bx, bz, rot=ang_deg+90)
 
     glfw.swap_buffers(window)
-
 def main():
     global window
+
     if not glfw.init():
         return
-    window = glfw.create_window(1000, 700, "QZ: subir/bajar | AWS PARA DEZPLAZARTE", None, None)
+
+    window = glfw.create_window(
+        1000,
+        700,
+        "Control con mano",
+        None,
+        None
+    )
+
     if not window:
-        glfw.terminate(); return
+        glfw.terminate()
+        return
+
     glfw.make_context_current(window)
-    glfw.set_key_callback(window, key_callback)
+
     init()
+
     while not glfw.window_should_close(window):
-        draw_pueblo()
+        hand_control()      # detectar mano
+        draw_pueblo()       # dibujar escena
         glfw.poll_events()
+
+    cap.release()
+    cv2.destroyAllWindows()
     glfw.terminate()
+
 
 if __name__ == "__main__":
     main()
