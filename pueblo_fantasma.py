@@ -13,23 +13,30 @@ BaseOptions           = mp.tasks.BaseOptions
 HandLandmarker        = mp.tasks.vision.HandLandmarker
 HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
 VisionRunningMode     = mp.tasks.vision.RunningMode
-#CORRIJAN LA UBICACION POR QUE ESTA ES LA MIA 
+#cambiar la ubicacion del .task
 MODEL_PATH = r'C:\Users\tigre\OneDrive\Documentos\graficacion\hand_landmarker.task'
+
 
 gesture_lock     = threading.Lock()
 current_gesture  = "NONE"
 cam_frame_lock   = threading.Lock()
 cam_frame_latest = None
 
+# Posición y orientación de la cámara
 cam_x, cam_y, cam_z = 0.0, 1.75, 28.0
 cam_yaw   =  0.0
 cam_pitch = -8.0
-VEL_MOVE  =  0.22
-VEL_ROT   =  1.8
+
+# Velocidades de movimiento 
+VEL_MOVE  =  1.45   
+VEL_ROT   =  3.0    
 
 random.seed(42)
 t_start = time.time()
 def T(): return time.time() - t_start
+
+
+#  personitas
 
 PERSONAS_DATA = [
     (  5,   4,  45, 0.04, 4.0, (0.80,0.10,0.10)),
@@ -48,60 +55,87 @@ PERSONAS_DATA = [
     (-22,   3, 270, 0.03, 4.5, (0.20,0.60,0.20)),
 ]
 
+#  BURROS 
+
 BURROS_DATA = [
-    ( -8, 20,  90, 0.025, 8.0),
-    ( 25,-18, 200, 0.020, 6.0),
+    ( -8,  20,  90, 0.025, 8.0),   # burro original 1
+    ( 25, -18, 200, 0.020, 6.0),   # burro original 2
+    ( 12,  35, 310, 0.030, 7.0),   # burro nuevo 3
+    (-20,  10, 150, 0.022, 5.5),   # burro nuevo 4
+    (  0, -30,  60, 0.018, 9.0),   # burro nuevo 5
+    (-35,  -5, 240, 0.025, 6.5),   # burro nuevo 6
 ]
 
+
 def finger_extended(lm, tip, pip):
+    """Devuelve True si el dedo está extendido (punta más arriba que nudillo)"""
     return lm[tip].y < lm[pip].y
 
 
 def classify_gesture(hand_landmarks_list):
-    lm = hand_landmarks_list # Lista de puntos normalizados de MediaPipe
-    
-    # Estados de los dedos
-    thumb_up   = lm[4].y < lm[3].y < lm[2].y
-    thumb_down = lm[4].y > lm[3].y > lm[2].y
-    index      = finger_extended(lm, 8, 6)
-    middle     = finger_extended(lm, 12, 10)
-    ring       = finger_extended(lm, 16, 14)
-    pinky      = finger_extended(lm, 20, 18)
-    
-    # 1. PALMA ABIERTA -> AVANZAR (Todos los dedos extendidos)
+    """
+    GESTOS Y SU ACCIÓN:
+    ┌──────────────────────────────────────────────────────┐
+    │  PALMA ABIERTA                       → AVANZAR       │
+    │  PUÑO CERRADO                        → RETROCEDER    │
+    │  ÍNDICE solo                         → GIRAR izq.    │
+    │  SÍMBOLO DE PAZ                      → GIRAR der.    │
+    │  DEDO ARRIBA                         → SUBIR         │
+    │  MEÑIQUE solo                        → BAJAR         │
+    └──────────────────────────────────────────────────────┘
+    """
+    lm = hand_landmarks_list
+
+    # Estado de cada dedo
+    thumb_up = lm[4].y < lm[3].y < lm[2].y   # pulgar apuntando arriba
+    index    = finger_extended(lm,  8,  6)     # índice extendido
+    middle   = finger_extended(lm, 12, 10)     # medio extendido
+    ring     = finger_extended(lm, 16, 14)     # anular extendido
+    pinky    = finger_extended(lm, 20, 18)     # meñique extendido
+
+    #  PALMA ABIERTA → AVANZAR 
+
     if index and middle and ring and pinky:
         return "FORWARD"
-    
-    # 2. PUÑO CERRADO -> RETROCEDER (Ningún dedo extendido, excepto quizás el pulgar neutral)
+
+    #  PUÑO CERRADO → RETROCEDER 
+
     if not index and not middle and not ring and not pinky and not thumb_up:
         return "BACK"
 
-    # 3. SÍMBOLO DE PAZ -> GIRAR IZQUIERDA (Índice y Medio)
-    if index and middle and not ring and not pinky:
-        return "TURN_L"
+    #  ÍNDICE SOLO → GIRAR IZQUIERDA 
 
-    # 4. ÍNDICE -> GIRAR DERECHA (Solo el índice)
     if index and not middle and not ring and not pinky:
         return "TURN_R"
 
-    # 5. PULGAR ARRIBA -> SUBIR
-    #if thumb_up and not index and not middle and not ring and not pinky:
-    #    return "UP"
+    # SÍMBOLO DE PAZ → GIRAR DERECHA 
 
-    # 6. PULGAR ABAJO -> BAJAR
-    #if thumb_down and not index and not middle and not ring and not pinky:
-     #   return "DOWN"
+    if index and middle and not ring and not pinky:
+        return "TURN_L"
+
+    # 5. PULGAR ARRIBA -> SUBIR
+    if thumb_up and not index and not middle and not ring and not pinky:
+        return "UP"
+
+    # MEÑIQUE SOLO → BAJAR 
+ 
+    if pinky and not index and not middle and not ring:
+        return "DOWN"
 
     return "NONE"
+
+
 labels = {
-    "FORWARD": "Avanzar",
-    "BACK":    "Retroceder",
-    "TURN_R":  "Girar IZQUIERDA",
-    "TURN_L":  "Girar DERECHA",
-    "UP":      "Subir",
-    "DOWN":    "Bajar",
-    "NONE":    "Sin gesto",
+    "FORWARD": " Avanzar",
+    "BACK":    " Retroceder",
+    "TURN_R":  " Girar DERECHA",
+    "TURN_L":  " Girar IZQUIERDA",
+    "UP":      " Subir",
+    "DOWN":    " Bajar",
+    "NONE":    "NO DETECTADO",
 }
+
+# Colores del rectángulo 
 colors_hud = {
     "FORWARD": (0,230,0),
     "BACK":    (0,0,230),
@@ -114,6 +148,7 @@ colors_hud = {
 
 
 def on_hand_result(result, output_image, timestamp_ms):
+    """Recibe resultado asíncrono de MediaPipe y actualiza gesto global"""
     global current_gesture
     gesture = "NONE"
     if result and result.hand_landmarks:
@@ -122,6 +157,8 @@ def on_hand_result(result, output_image, timestamp_ms):
         current_gesture = gesture
 
 def vision_thread():
+    """
+    """
     global cam_frame_latest
 
     if not os.path.exists(MODEL_PATH):
@@ -146,7 +183,6 @@ def vision_thread():
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
     cap.set(cv2.CAP_PROP_FPS, 30)
 
-    # Inicializar marcas de tiempo incrementales obligatorias en LIVE_STREAM
     base_timestamp = int(time.time() * 1000)
 
     with HandLandmarker.create_from_options(options) as detector:
@@ -157,65 +193,73 @@ def vision_thread():
                 time.sleep(0.01)
                 continue
 
-            frame = cv2.flip(frame, 1)
-
+            frame = cv2.flip(frame, 1)  # espejo horizontal
             if frame_idx % 2 == 0:
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-                
-                
                 current_timestamp = base_timestamp + int(time.time() * 1000) - base_timestamp
                 try:
                     detector.detect_async(mp_image, current_timestamp)
-                except Exception as e:
+                except Exception:
                     pass
 
             frame_idx += 1
-
             with gesture_lock:
                 g = current_gesture
             col = colors_hud.get(g, (180,180,180))
             cv2.putText(frame, labels.get(g, ""), (8, 22),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.65, col, 2)
-            cv2.rectangle(frame, (0,0), (frame.shape[1]-1, frame.shape[0]-1), col, 2)
+            cv2.rectangle(frame, (0,0),
+                          (frame.shape[1]-1, frame.shape[0]-1), col, 2)
 
             with cam_frame_lock:
                 cam_frame_latest = frame.copy()
 
-            time.sleep(0.02) # Sincronización más fluida de captura
+            time.sleep(0.016)  # ~60 fps máximo en el hilo de visión
 
     cap.release()
 
+
+#  TECLADO (control alternativo en caso de que no detecte bien las manos)
+
 keys_held = set()
 def key_callback(window, key, scancode, action, mods):
+    """Registra teclas presionadas para movimiento con teclado"""
     if action == glfw.PRESS:   keys_held.add(key)
     if action == glfw.RELEASE: keys_held.discard(key)
     if key == glfw.KEY_ESCAPE and action == glfw.PRESS:
         glfw.set_window_should_close(window, True)
 
 def apply_camera_movement():
+    """
+    """
     global cam_x, cam_y, cam_z, cam_yaw, cam_pitch
     with gesture_lock:
         g = current_gesture
     yr = math.radians(cam_yaw)
     fx, fz = -math.sin(yr), -math.cos(yr)
-    
-    if g == "FORWARD": cam_x += fx*VEL_MOVE; cam_z += fz*VEL_MOVE
-    elif g == "BACK":  cam_x -= fx*VEL_MOVE; cam_z -= fz*VEL_MOVE
+
+    # MOVIENTO MANOS
+    if g == "FORWARD":  cam_x += fx*VEL_MOVE; cam_z += fz*VEL_MOVE
+    elif g == "BACK":   cam_x -= fx*VEL_MOVE; cam_z -= fz*VEL_MOVE
     elif g == "TURN_R": cam_yaw += VEL_ROT
     elif g == "TURN_L": cam_yaw -= VEL_ROT
-    elif g == "UP":   cam_y += VEL_MOVE*0.6
-    elif g == "DOWN": cam_y -= VEL_MOVE*0.6
-    
+    elif g == "UP":     cam_y += VEL_MOVE*0.6
+    elif g == "DOWN":   cam_y -= VEL_MOVE*0.6
+
+    # MOVIMIENTO DE TECLAS
     if glfw.KEY_W in keys_held or glfw.KEY_UP    in keys_held: cam_x += fx*VEL_MOVE; cam_z += fz*VEL_MOVE
     if glfw.KEY_S in keys_held or glfw.KEY_DOWN  in keys_held: cam_x -= fx*VEL_MOVE; cam_z -= fz*VEL_MOVE
     if glfw.KEY_A in keys_held or glfw.KEY_LEFT  in keys_held: cam_yaw -= VEL_ROT
     if glfw.KEY_D in keys_held or glfw.KEY_RIGHT in keys_held: cam_yaw += VEL_ROT
     if glfw.KEY_Q in keys_held: cam_y += VEL_MOVE*0.6
     if glfw.KEY_Z in keys_held: cam_y -= VEL_MOVE*0.6
+
     cam_pitch = max(-89.0, min(89.0, cam_pitch))
 
+
 def init_gl():
+    """"""
     glClearColor(0.52, 0.73, 1.0, 1.0)
     glEnable(GL_DEPTH_TEST)
     glEnable(GL_BLEND)
@@ -224,11 +268,16 @@ def init_gl():
     gluPerspective(65, 1000/700, 0.1, 300.0)
     glMatrixMode(GL_MODELVIEW)
 
+
+
+#  PRIMITIVAS 
+
 def quad(x0,y0,z0,x1,y1,z1,x2,y2,z2,x3,y3,z3):
     glVertex3f(x0,y0,z0); glVertex3f(x1,y1,z1)
     glVertex3f(x2,y2,z2); glVertex3f(x3,y3,z3)
 
 def box(x0,y0,z0,x1,y1,z1):
+    """Dibuja un cubo sólido con 6 caras"""
     glBegin(GL_QUADS)
     quad(x0,y0,z1,x1,y0,z1,x1,y1,z1,x0,y1,z1)
     quad(x1,y0,z0,x0,y0,z0,x0,y1,z0,x1,y1,z0)
@@ -244,7 +293,12 @@ def cyl(r,h,sl=12):
 def sph(r,sl=10):
     q=gluNewQuadric(); gluSphere(q,r,sl,sl)
 
+
+
+#  OBJETOS DEL PUEBLO
+
 def draw_tree(x,z,h=3.5,cr=0.9,kind=0):
+    """Árbol tipo 0=pino (capas), tipo 1=redondo"""
     glPushMatrix(); glTranslatef(x,0,z)
     glColor3f(0.35,0.22,0.08)
     glPushMatrix(); glRotatef(-90,1,0,0); cyl(0.15,h*0.38); glPopMatrix()
@@ -311,10 +365,12 @@ def draw_car(x,z,rot=0,color=(0.7,0.1,0.1)):
     glPopMatrix()
 
 def animated_pos(sx,sz,dir0,spd,radio,t):
+    """Calcula posición circular animada para personas y burros"""
     ang=math.radians(dir0)+t*spd
     return sx+radio*math.cos(ang), sz+radio*math.sin(ang), (math.degrees(ang)+90)%360
 
 def draw_person_at(px,pz,face_deg=0,anim_t=0,shirt=(0.6,.1,.1),skin=(0.85,.65,.45)):
+    """Dibuja una persona con animación de caminar"""
     glPushMatrix(); glTranslatef(px,0,pz); glRotatef(face_deg,0,1,0)
     sw=math.sin(anim_t*5.0)*15.0
     glColor3f(0.15,0.15,0.4)
@@ -335,6 +391,7 @@ def draw_person_at(px,pz,face_deg=0,anim_t=0,shirt=(0.6,.1,.1),skin=(0.85,.65,.4
     glPopMatrix()
 
 def draw_burro_at(px,pz,face_deg=0,anim_t=0):
+    """Dibuja un burro con animación de patas"""
     glPushMatrix(); glTranslatef(px,0,pz); glRotatef(face_deg,0,1,0)
     sw=math.sin(anim_t*4.0)*12.0
     glColor3f(0.55,0.52,0.48); box(-.45,.55,-.90,.45,1.05,.90)
@@ -355,8 +412,98 @@ def draw_burro_at(px,pz,face_deg=0,anim_t=0):
     glPushMatrix(); glTranslatef(0,.85,-.92); glRotatef(20,1,0,0); cyl(.03,.50,6); glPopMatrix()
     glPopMatrix()
 
+
+
+#  TIENDA NEGROXXO
+
+def draw_oxxo(x, z, rot=0):
+    """
+    """
+    glPushMatrix()
+    glTranslatef(x, 0, z)
+    glRotatef(rot, 0, 1, 0)
+
+    W, D, H = 5.0, 3.5, 3.8  # ancho, profundidad, altura
+
+    # fachada
+    glColor3f(0.94, 0.91, 0.82)
+    box(-W/2, 0, -D/2, W/2, H, D/2)
+
+    # franja roja
+    glColor3f(0.85, 0.08, 0.08)
+    box(-W/2 - 0.02, H*0.70, D/2, W/2 + 0.02, H, D/2 + 0.05)
+
+    # ltrero OXXO 
+    glColor3f(0.80, 0.06, 0.06)
+    box(-W/2 + 0.3, H*0.72, D/2 + 0.04,  W/2 - 0.3, H*0.96, D/2 + 0.10)
+
+    glColor3f(1.0, 0.85, 0.0)
+    box(-1.65, H*0.76, D/2 + 0.10, -0.95, H*0.93, D/2 + 0.13)
+    glColor3f(0.80, 0.06, 0.06)
+    box(-1.50, H*0.79, D/2 + 0.11, -1.10, H*0.90, D/2 + 0.14)
+
+ 
+    glColor3f(1.0, 0.85, 0.0)
+    box(-0.75, H*0.76, D/2 + 0.10, -0.05, H*0.93, D/2 + 0.13)
+    glColor3f(0.80, 0.06, 0.06)
+    box(-0.60, H*0.82, D/2 + 0.11,  0.10, H*0.87, D/2 + 0.14)
+
+
+    glColor3f(1.0, 0.85, 0.0)
+    box( 0.05, H*0.76, D/2 + 0.10,  0.75, H*0.93, D/2 + 0.13)
+    glColor3f(0.80, 0.06, 0.06)
+    box( 0.10, H*0.82, D/2 + 0.11,  0.80, H*0.87, D/2 + 0.14)
+
+
+    glColor3f(1.0, 0.85, 0.0)
+    box( 0.95, H*0.76, D/2 + 0.10,  1.65, H*0.93, D/2 + 0.13)
+    glColor3f(0.80, 0.06, 0.06)
+    box( 1.10, H*0.79, D/2 + 0.11,  1.50, H*0.90, D/2 + 0.14)
+
+    # ventanales
+    glColor3f(0.55, 0.73, 0.88)
+    box(-W/2 + 0.3, 0.5, D/2,  -1.1, H*0.65, D/2 + 0.04)
+    box( 1.1,       0.5, D/2,   W/2 - 0.3, H*0.65, D/2 + 0.04)
+
+    # marcos de las ventanas
+    glColor3f(0.88, 0.82, 0.65)
+    box(-W/2 + 0.25, 0.45, D/2 + 0.02, -W/2 + 0.30, H*0.67, D/2 + 0.05)
+    box(-1.15,       0.45, D/2 + 0.02, -1.10,        H*0.67, D/2 + 0.05)
+    box( 1.10,       0.45, D/2 + 0.02,  1.15,        H*0.67, D/2 + 0.05)
+    box( W/2 - 0.30, 0.45, D/2 + 0.02,  W/2 - 0.25, H*0.67, D/2 + 0.05)
+
+    # la puerta
+    glColor3f(0.50, 0.68, 0.82)
+    box(-0.60, 0, D/2,  0.60, 2.40, D/2 + 0.05)
+
+    # marco de puerta
+    glColor3f(0.30, 0.28, 0.26)
+    box(-0.65, 0, D/2 + 0.03, -0.60, 2.45, D/2 + 0.06)
+    box( 0.60, 0, D/2 + 0.03,  0.65, 2.45, D/2 + 0.06)
+    box(-0.65, 2.40, D/2 + 0.03, 0.65, 2.45, D/2 + 0.06)
+
+
+    glColor3f(0.35, 0.33, 0.31)
+    box(-0.04, 0, D/2 + 0.04, 0.04, 2.40, D/2 + 0.07)
+
+    # techo
+    glColor3f(0.40, 0.38, 0.36)
+    box(-W/2 - 0.15, H,       -D/2 - 0.10,  W/2 + 0.15, H + 0.12, D/2 + 0.15)
+    box(-W/2 - 0.15, H + 0.12, D/2 - 0.05,  W/2 + 0.15, H + 0.40, D/2 + 0.15)
+
+    # franja de al lado roja
+    glColor3f(0.85, 0.08, 0.08)
+    box( W/2,       0, -D/2,  W/2 + 0.04, H, D/2)
+    box(-W/2 - 0.04, 0, -D/2, -W/2,       H, D/2)
+
+
+
+
+#  EDIFICIOS PRINCIPALES
+
 def draw_house(x,z,rot=0,w=3.0,d=2.2,wc=(0.95,.93,.88),rc=(.72,.20,.10),
                dc=(.28,.16,.06),zc=(.40,.10,.02),sec=False):
+    """Casa con techo a dos aguas. sec=True agrega un segundo piso"""
     glPushMatrix(); glTranslatef(x,0,z); glRotatef(rot,0,1,0)
     hw=w/2; hd=d/2; H=2.6; H2=H+2.4 if sec else H
     glColor3f(*wc)
@@ -394,6 +541,7 @@ def draw_house(x,z,rot=0,w=3.0,d=2.2,wc=(0.95,.93,.88),rc=(.72,.20,.10),
     glPopMatrix()
 
 def draw_kiosk(x,z):
+    """Kiosco """
     glPushMatrix(); glTranslatef(x,0,z)
     S=8; rp=3.2
     glColor3f(.72,.70,.65)
@@ -447,6 +595,7 @@ def draw_kiosk(x,z):
     glPopMatrix()
 
 def draw_iglesia(x,z):
+    """Iglesia """
     glPushMatrix(); glTranslatef(x,0,z)
     glColor3f(.97,.95,.88); box(-4.5,0,-6.0,4.5,5.5,6.0)
     glColor3f(.70,.18,.08)
@@ -477,6 +626,7 @@ def draw_iglesia(x,z):
     glPopMatrix()
 
 def draw_escuela(x,z,rot=0):
+    """Escuela """
     glPushMatrix(); glTranslatef(x,0,z); glRotatef(rot,0,1,0)
     glColor3f(.95,.90,.72); box(-8.0,0,-5.0,8.0,4.5,5.0)
     glColor3f(.28,.55,.28); box(-8.05,0,4.99,8.05,.70,5.08)
@@ -500,6 +650,7 @@ def draw_escuela(x,z,rot=0):
     glPopMatrix()
 
 def draw_fuente(x,z):
+    """Fuente con pileta """
     glPushMatrix(); glTranslatef(x,0,z)
     glColor3f(.72,.70,.65)
     glPushMatrix(); glRotatef(-90,1,0,0); cyl(1.8,0.5,20); glPopMatrix()
@@ -514,6 +665,7 @@ def draw_fuente(x,z):
     glPopMatrix()
 
 def draw_jardin(x0,z0,x1,z1):
+    """Jardín central """
     glColor3f(.13,.48,.14)
     glBegin(GL_QUADS)
     glVertex3f(x0,.01,z0); glVertex3f(x1,.01,z0)
@@ -528,6 +680,7 @@ def draw_jardin(x0,z0,x1,z1):
         glPushMatrix(); glTranslatef(fx,0,fz); glRotatef(-90,1,0,0); cyl(.02,.10,5); glPopMatrix()
 
 def draw_adoquin(x0,z0,x1,z1,w=2.5):
+    """Camino """
     dx,dz=x1-x0,z1-z0
     length=math.sqrt(dx*dx+dz*dz)
     ang=math.degrees(math.atan2(dx,dz))
@@ -544,6 +697,7 @@ def draw_adoquin(x0,z0,x1,z1,w=2.5):
     glPopMatrix()
 
 def draw_negocio(x,z,rot=0,color=(.88,.72,.35),lc=(.6,.05,.05)):
+    """Negocio local """
     glPushMatrix(); glTranslatef(x,0,z); glRotatef(rot,0,1,0)
     glColor3f(*color); box(-2.2,0,-1.5,2.2,3.2,1.5)
     glColor3f(.35,.08,0); box(-2.21,0,1.49,2.21,.5,1.58)
@@ -553,6 +707,7 @@ def draw_negocio(x,z,rot=0,color=(.88,.72,.35),lc=(.6,.05,.05)):
     glPopMatrix()
 
 def draw_mountains():
+    """Montañas """
     peaks=[(-80,35,-95),(0,45,-100),(80,30,-90),(-120,25,-85),(120,28,-88),(-50,20,-80),(50,22,-80)]
     for mx,mh,mz in peaks:
         glColor3f(.28,.38,.22)
@@ -565,11 +720,15 @@ def draw_mountains():
         glEnd()
 
 def draw_clouds():
+    """Nubes """
     data=[(-20,22,-60),(10,25,-70),(35,20,-55),(-40,24,-75),(55,23,-65)]
     glColor3f(.97,.97,.97)
     for cx,cy,cz in data:
         for dx,dz,r in [(0,0,2.2),(-2,0,1.5),(2,0,1.5),(0,.8,1.3)]:
             glPushMatrix(); glTranslatef(cx+dx,cy,cz+dz); sph(r,10); glPopMatrix()
+
+
+#  MINIATURA DE LA CÁMARA 
 
 hud_tex_id = None
 def init_hud_texture():
@@ -604,7 +763,10 @@ def draw_hud_camera():
     glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix()
     glMatrixMode(GL_MODELVIEW)
 
+
+#bucle para el pueblo
 def draw_pueblo():
+
     t = T()
     apply_camera_movement()
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
@@ -615,22 +777,36 @@ def draw_pueblo():
     ly = cam_y + math.sin(pr)
     lz = cam_z + math.cos(pr)*(-math.cos(yr))
     gluLookAt(cam_x, cam_y, cam_z, lx, ly, lz, 0, 1, 0)
+
+    # Cielo 
     draw_clouds()
     draw_mountains()
+
+    # Suelo
     glColor3f(.38,.36,.33)
     glBegin(GL_QUADS)
     glVertex3f(-100,0,100); glVertex3f(100,0,100)
     glVertex3f(100,0,-100); glVertex3f(-100,0,-100)
     glEnd()
+
+    # Jardin y caminos
     draw_jardin(-11,-11,11,11)
     draw_adoquin(0,11,0,50); draw_adoquin(0,-11,0,-50)
     draw_adoquin(11,0,50,0); draw_adoquin(-11,0,-50,0)
     draw_adoquin(11,11,45,45,w=2.2); draw_adoquin(-11,11,-45,45,w=2.2)
     draw_adoquin(11,-11,45,-45,w=2.2); draw_adoquin(-11,-11,-45,-45,w=2.2)
+
+    # Edificios principales
     draw_kiosk(0,0)
     draw_fuente(0,-7.5); draw_fuente(0,7.5)
     draw_iglesia(0,-42)
     draw_escuela(35,40,rot=180)
+
+    # OXXO 
+    draw_oxxo(-50, 40, rot=90)   # OXXO lado norte-izquierdo
+    draw_oxxo( 28, -38, rot=0)   # OXXO lado sur-derecho
+
+    # Casas alrededor de la plaza
     for i,hx in enumerate(range(-28,32,14)):
         draw_house(hx,18,rot=180,w=3.5,d=2.5,sec=(hx%14==0))
         draw_house(hx,-18,rot=0,w=3.5,d=2.5,wc=(.92,.90,.82),rc=(.68,.18,.06))
@@ -643,10 +819,14 @@ def draw_pueblo():
     for i,hz in enumerate(range(-32,36,14)):
         draw_house(40,hz,rot=270,w=3.5,d=2.4)
         draw_house(-40,hz,rot=90,w=3.5,d=2.4,wc=(.90,.87,.76))
+
+    # Negocios locales
     draw_negocio(15,16,rot=180,color=(.85,.70,.30),lc=(.1,.35,.1))
     draw_negocio(-15,16,rot=180,color=(.80,.65,.28),lc=(.6,.05,.05))
     draw_negocio(15,-16,rot=0,color=(.78,.60,.25),lc=(.1,.10,.55))
     draw_negocio(-15,-16,rot=0,color=(.82,.68,.28),lc=(.55,.35,.0))
+
+    # Árboles en el jardín y calles
     for i,(ax,az) in enumerate([(-8,-8),(8,-8),(-8,8),(8,8),(-3,-9),(3,-9),(-3,9),(3,9)]):
         draw_tree(ax,az,h=3.0+i%2,kind=i%2)
     for zz in range(-45,46,8):
@@ -657,6 +837,8 @@ def draw_pueblo():
                      (-50,0,0),(50,0,1),(0,50,0),(0,-50,1),
                      (22,42,0),(-22,42,1),(22,-42,0),(-22,-42,1)]:
         draw_tree(ax,az,h=4.5,kind=k)
+
+    # Postes y banderines
     pn=[(-12,14),(-6,14),(0,14),(6,14),(12,14)]
     ps=[(-12,-14),(-6,-14),(0,-14),(6,-14),(12,-14)]
     pe=[(13,-12),(13,-6),(13,0),(13,6),(13,12)]
@@ -670,6 +852,8 @@ def draw_pueblo():
         draw_cable_banderines(po[i][0],po[i][1],po[i+1][0],po[i+1][1],nb=12)
     for zz in [-10,-5,0,5,10]:
         draw_cable_banderines(-13,zz,13,zz,nb=14)
+
+    # Autos
     draw_car(5,30,rot=0,color=(.15,.25,.65))
     draw_car(-5,30,rot=180,color=(.7,.1,.1))
     draw_car(16,5,rot=90,color=(.1,.5,.15))
@@ -677,33 +861,42 @@ def draw_pueblo():
     draw_car(0,-32,rot=0,color=(.5,.1,.5))
     draw_car(-18,10,rot=90,color=(.15,.15,.15))
     draw_car(3,50,rot=180,color=(.85,.40,.10))
+
+    # Personas
     for sx,sz,d0,spd,radio,shirt in PERSONAS_DATA:
         px,pz,face=animated_pos(sx,sz,d0,spd,radio,t)
         draw_person_at(px,pz,face_deg=face,anim_t=t*spd*20,shirt=shirt)
+
+    # Burros feos
     for sx,sz,d0,spd,radio in BURROS_DATA:
         px,pz,face=animated_pos(sx,sz,d0,spd,radio,t)
         draw_burro_at(px,pz,face_deg=face,anim_t=t*spd*20)
+
+    # Bancas alrededor del kiosco
     for ad in [0,45,90,135,180,225,270,315]:
         a=math.radians(ad); draw_bench(9.5*math.cos(a),9.5*math.sin(a),rot=ad+90)
+
+ #camaraaaaa
     draw_hud_camera()
     glfw.swap_buffers(window)
+
 
 def main():
     global window
     vt = threading.Thread(target=vision_thread, daemon=True)
     vt.start()
+
     if not glfw.init(): return
-    window = glfw.create_window(1000, 700, "Pueblo Magico Michoacan", None, None)
+    window = glfw.create_window(1000, 700, "Pueblo del Cris ", None, None)
     if not window: glfw.terminate(); return
     glfw.make_context_current(window)
     glfw.set_key_callback(window, key_callback)
     init_gl()
     init_hud_texture()
-
-
     while not glfw.window_should_close(window):
         draw_pueblo()
         glfw.poll_events()
+
     glfw.terminate()
 
 if __name__ == "__main__":
